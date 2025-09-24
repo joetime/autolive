@@ -8,8 +8,9 @@ venv/
 #output folder
 out/
 
-#test file
+# test files
 test.wav
+wav/
 
 # python caches
 __pycache__/
