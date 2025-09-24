@@ -4,3 +4,15 @@ config.toml
 
 # Ignore Python virtual environment
 venv/
+
+#output folder
+out/
+
+#test file
+test.wav
+
+# python caches
+__pycache__/
+*.pyc
+*.pyo
+
