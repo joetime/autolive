@@ -1,0 +1,25 @@
+# --- SoundCloud Settings ---
+[soundcloud]
+# Replace with your SoundCloud API credentials
+client_id = "YOUR_CLIENT_ID"
+client_secret = "YOUR_CLIENT_SECRET"
+access_token = "YOUR_ACCESS_TOKEN"
+
+# --- Audio Processing Settings ---
+[audio]
+# thresholds (in dB) for silence detection
+silence_thresh = -40
+min_silence_len = 1500   # milliseconds
+song_min_length = 180    # seconds (3 minutes)
+song_max_length = 420    # seconds (7 minutes)
+
+# --- File System Settings ---
+[filesystem]
+# Path to folder your app will watch for new audio files
+watch_folder = "/path/to/watch_folder"
+output_format = "flac"   # flac, wav, mp3 (lossless recommended)
+
+# --- Upload Settings ---
+[upload]
+default_playlist = "Live Shows"
+make_private = true

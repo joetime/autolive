@@ -1,0 +1,6 @@
+
+# secret stuff stored in this file
+config.toml
+
+# Ignore Python virtual environment
+venv/
