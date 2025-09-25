@@ -19,8 +19,8 @@ def estimate_silence_threshold(
     audio_path: Path,
     analysis_sample_sec: int = 60,
     analysis_seg_ms: int = 50,
-    bottom_percentile: float = 0.30,
-    floor_headroom_db: float = 2.0,
+    bottom_percentile: float = 0.25,
+    floor_headroom_db: float = 3.5,
 ) -> float:
     """Return an estimated silence threshold (dBFS) from the audio.
     
@@ -75,11 +75,11 @@ def estimate_silence_threshold(
 def detect_song_spans(
     audio_path: Path,
     silence_thresh_db: float | None = None,
-    min_silence_len_ms: int = 1500,
-    keep_silence_ms: int = 200,
-    target_song_min_ms: int = 180_000,  # 3 min
-    target_song_max_ms: int = 420_000,  # 7 min
-    merge_adjacent_gap_ms: int = 10,
+    min_silence_len_ms: int = 2000,
+    keep_silence_ms: int = 900,
+    target_song_min_ms: int = 120_000,  # 2 min
+    target_song_max_ms: int = 600_000,  # 10 min
+    merge_adjacent_gap_ms: int = 1000,
 ) -> List[Tuple[int, int]]:
     """Detect "song" spans as (start_ms, end_ms) from audio file.
     
@@ -143,6 +143,17 @@ def detect_song_spans(
         target_song_min_ms, 
         target_song_max_ms
     )
+
+    # Drop very short fragments (< 45s) per spec
+    min_fragment_ms = 45_000
+    pre_filter_count = len(song_spans)
+    song_spans = [
+        (s, e) for (s, e) in song_spans
+        if (e - s) >= min_fragment_ms
+    ]
+    dropped = pre_filter_count - len(song_spans)
+    if dropped:
+        logger.info(f"Dropped {dropped} short fragment(s) < {min_fragment_ms}ms")
     
     logger.info(f"Final song spans: {len(song_spans)} segments")
     for i, (start, end) in enumerate(song_spans, 1):

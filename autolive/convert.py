@@ -136,7 +136,7 @@ def _convert_one(in_file: Path, out_file: Path, overwrite: bool) -> Tuple[bool, 
         _run(cmd)
 
         size = out_file.stat().st_size if out_file.exists() else 0
-        return True, f"[OK] {in_file.name} {duration} a {bytes_to_human(size)}"
+        return True, f"[OK] {in_file.name} {duration} -> {bytes_to_human(size)}"
     except subprocess.CalledProcessError as e:
         err = e.stderr.decode("utf-8", errors="ignore") if isinstance(e.stderr, (bytes, bytearray)) else str(e)
         return False, f"[ERR] {in_file.name}: ffmpeg failed ({e.returncode})"
