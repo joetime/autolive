@@ -212,35 +212,62 @@ def create_playlist(
     """
     logger.info(f"Creating playlist: {title} with {len(track_ids)} tracks")
     
-    # Prepare track objects
-    tracks = [{"id": track_id} for track_id in track_ids]
-    
-    data = {
-        'playlist[title]': title,
-        'playlist[sharing]': sharing,
-        'playlist[tracks]': tracks
+    headers = {
+        'Authorization': f'OAuth {access_token}',
+        'Content-Type': 'application/json'
     }
     
-    headers = {
-        'Authorization': f'OAuth {access_token}'
+    # First create empty playlist
+    playlist_data = {
+        'playlist': {
+            'title': title,
+            'sharing': sharing
+        }
     }
     
     try:
+        # Create empty playlist
         response = requests.post(
             PLAYLIST_URL,
-            data=data,
+            json=playlist_data,
             headers=headers,
             timeout=30
         )
         
-        if response.status_code == 201:
-            playlist_data = response.json()
-            playlist_id = playlist_data['id']
-            logger.info(f"PLAYLIST OK id={playlist_id} title=\"{title}\"")
-            return playlist_id
-        else:
-            logger.error(f"PLAYLIST ERR status={response.status_code} {response.text}")
+        if response.status_code != 201:
+            logger.error(f"PLAYLIST CREATE ERR status={response.status_code} {response.text}")
             raise RuntimeError(f"Playlist creation failed: {response.status_code} - {response.text}")
+        
+        playlist_info = response.json()
+        playlist_id = playlist_info['id']
+        logger.info(f"PLAYLIST CREATED id={playlist_id} title=\"{title}\"")
+        
+        # Now add tracks to the playlist using form data
+        if track_ids:
+            # SoundCloud expects form data for track updates
+            tracks_data = {}
+            for i, track_id in enumerate(track_ids):
+                tracks_data[f'playlist[tracks][{i}][id]'] = track_id
+            
+            # Remove Content-Type header for form data
+            form_headers = {
+                'Authorization': f'OAuth {access_token}'
+            }
+            
+            update_response = requests.put(
+                f"{PLAYLIST_URL}/{playlist_id}",
+                data=tracks_data,
+                headers=form_headers,
+                timeout=30
+            )
+            
+            if update_response.status_code == 200:
+                logger.info(f"PLAYLIST UPDATED id={playlist_id} tracks={len(track_ids)}")
+            else:
+                logger.warning(f"PLAYLIST UPDATE WARN status={update_response.status_code} {update_response.text}")
+        
+        logger.info(f"PLAYLIST OK id={playlist_id} title=\"{title}\"")
+        return playlist_id
             
     except requests.RequestException as e:
         logger.error(f"PLAYLIST ERR network error: {e}")
