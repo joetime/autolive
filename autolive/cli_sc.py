@@ -137,6 +137,8 @@ def cmd_playlist(args) -> int:
         return 1
 
 
+
+
 def cmd_poc(args) -> int:
     """Proof-of-concept: upload directory and create playlist."""
     if not args.dir.exists():
@@ -214,6 +216,7 @@ def main() -> int:
     poc_parser.add_argument('--title', required=True, help='Playlist title')
     poc_parser.add_argument('--sharing', choices=['private', 'public'], help='Upload visibility')
     poc_parser.add_argument('--title-prefix', help='Prefix for track titles')
+
     
     args = parser.parse_args()
     

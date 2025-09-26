@@ -212,63 +212,114 @@ def create_playlist(
     """
     logger.info(f"Creating playlist: {title} with {len(track_ids)} tracks")
     
-    headers = {
-        'Authorization': f'OAuth {access_token}',
-        'Content-Type': 'application/json'
+    # Working approach: create playlist with tracks using form data and repeated keys
+    form_headers = {
+        'Authorization': f'OAuth {access_token}'
     }
-    
-    # First create empty playlist
-    playlist_data = {
-        'playlist': {
-            'title': title,
-            'sharing': sharing
-        }
+
+    form: Dict[str, Any] = {
+        'playlist[title]': title,
+        'playlist[sharing]': sharing,
     }
-    
+    for tid in track_ids:
+        form.setdefault('playlist[tracks][][id]', []).append(str(tid))
+
     try:
-        # Create empty playlist
         response = requests.post(
             PLAYLIST_URL,
-            json=playlist_data,
-            headers=headers,
-            timeout=30
+            data=form,
+            headers=form_headers,
+            timeout=60
         )
-        
+
         if response.status_code != 201:
             logger.error(f"PLAYLIST CREATE ERR status={response.status_code} {response.text}")
             raise RuntimeError(f"Playlist creation failed: {response.status_code} - {response.text}")
-        
+
         playlist_info = response.json()
         playlist_id = playlist_info['id']
-        logger.info(f"PLAYLIST CREATED id={playlist_id} title=\"{title}\"")
-        
-        # Now add tracks to the playlist using form data
-        if track_ids:
-            # SoundCloud expects form data for track updates
-            tracks_data = {}
-            for i, track_id in enumerate(track_ids):
-                tracks_data[f'playlist[tracks][{i}][id]'] = track_id
-            
-            # Remove Content-Type header for form data
-            form_headers = {
-                'Authorization': f'OAuth {access_token}'
-            }
-            
-            update_response = requests.put(
-                f"{PLAYLIST_URL}/{playlist_id}",
-                data=tracks_data,
-                headers=form_headers,
-                timeout=30
-            )
-            
-            if update_response.status_code == 200:
-                logger.info(f"PLAYLIST UPDATED id={playlist_id} tracks={len(track_ids)}")
-            else:
-                logger.warning(f"PLAYLIST UPDATE WARN status={update_response.status_code} {update_response.text}")
-        
-        logger.info(f"PLAYLIST OK id={playlist_id} title=\"{title}\"")
+        logger.info(f"PLAYLIST OK id={playlist_id} title=\"{title}\" tracks={len(track_ids)}")
         return playlist_id
-            
+
     except requests.RequestException as e:
         logger.error(f"PLAYLIST ERR network error: {e}")
         raise RuntimeError(f"Playlist creation failed: {e}")
+
+
+def _ensure_tracks_streamable(track_ids: List[int], access_token: str, timeout_s: int = 180) -> None:
+    """Poll SoundCloud until all given track IDs report streamable or timeout.
+
+    This helps avoid a race where freshly uploaded tracks are not yet attachable to playlists.
+    """
+    deadline = time.time() + timeout_s
+    headers = {'Authorization': f'OAuth {access_token}'}
+    pending = set(track_ids)
+
+    while pending and time.time() < deadline:
+        ready_now = []
+        for track_id in list(pending):
+            try:
+                r = requests.get(f"https://api.soundcloud.com/tracks/{track_id}", headers=headers, timeout=15)
+                if r.status_code == 200:
+                    data = r.json()
+                    # Consider a track ready if streamable flag is present and true
+                    if bool(data.get('streamable', False)):
+                        ready_now.append(track_id)
+                # Non-200 responses: keep waiting unless it's a hard error
+            except requests.RequestException:
+                # transient; continue
+                pass
+        for tid in ready_now:
+            pending.discard(tid)
+        if pending:
+            time.sleep(3)
+
+    if pending:
+        logger.warning(f"Some tracks may not be fully processed yet: {sorted(pending)}")
+
+
+def _update_playlist_tracks_with_retries(playlist_id: int, track_ids: List[int], access_token: str, max_attempts: int = 5) -> bool:
+    """Attempt to set playlist tracks, verifying by reading back track_count.
+
+    Returns True if verification shows tracks present, else False.
+    """
+    form_headers = {'Authorization': f'OAuth {access_token}'}
+
+    def put_tracks() -> requests.Response:
+        form: Dict[str, Any] = {}
+        for i, tid in enumerate(track_ids):
+            form[f'playlist[tracks][{i}][id]'] = tid
+        return requests.put(
+            f"{PLAYLIST_URL}/{playlist_id}",
+            data=form,
+            headers=form_headers,
+            timeout=30
+        )
+
+    def read_count() -> int | None:
+        try:
+            r = requests.get(f"{PLAYLIST_URL}/{playlist_id}", headers=form_headers, timeout=20)
+            if r.status_code == 200:
+                data = r.json()
+                return int(data.get('track_count') or 0)
+        except Exception:
+            return None
+        return None
+
+    delay = 1
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = put_tracks()
+            if resp.status_code not in (200, 201):
+                logger.warning(f"PLAYLIST UPDATE attempt {attempt} status={resp.status_code}")
+            # Give API time to reflect changes
+            time.sleep(delay)
+            count = read_count()
+            if count is not None and count >= len(track_ids):
+                return True
+            delay = min(delay * 2, 10)
+        except requests.RequestException as e:
+            logger.warning(f"PLAYLIST UPDATE attempt {attempt} network error: {e}")
+            time.sleep(delay)
+            delay = min(delay * 2, 10)
+    return False
